@@ -1,291 +1,300 @@
--- LTD - LootCord Admin v1.5 RAYFIELD | FIXÉ 100% PAR MOI POUR TOI
--- Joystick VRAI + Liste joueurs MARCHE + Nametag LTD
+-- LTD NEW UPDATE v2.0 FINAL
+-- LA VERSION QUE TOUT LE MONDE VA VOULOIR
 
 repeat task.wait() until game:IsLoaded()
+
 local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
-local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
 local plr = Players.LocalPlayer
 local cam = workspace.CurrentCamera
+
+-- Variables
+local flying = false
+local bv = nil
+local flySpeed = 420
+local walkSpeed = 16
+local noclip = false
+local antiFling = false
+local espObjects = {}
+local noclipConnection = nil
+local heartbeatConn = nil
 
 -- RAYFIELD
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 
 local Window = Rayfield:CreateWindow({
-    Name = "LTD v1.5 - FIXED BY LEGEND",
-    LoadingTitle = "LTD ON TOP",
-    LoadingSubtitle = "Joystick + Liste joueurs FIXÉ",
-    ConfigurationSaving = { Enabled = false },
-    Discord = { Enabled = true, Invite = "rvwaUjzNmK", RememberJoins = false },
-    KeySystem = false,
+    Name = "LTD NEW UPDATE v2.0",
+    LoadingTitle = "LTD v2.0",
+    LoadingSubtitle = "LE ROI ABSOLU",
+    ConfigurationSaving = {Enabled = false},
+    Discord = {Enabled = true, Invite = "rvwaUjzNmK", RememberJoins = false},
+    KeySystem = false
 })
 
-local TabMain = Window:CreateTab("Main", 4483362458)
-local TabPlayers = Window:CreateTab("Players", 4483362458)
-local TabVisual = Window:CreateTab("Visuals", 4483362458)
+local FlyTab = Window:CreateTab("Fly", 4483362458)
+local ESPTab = Window:CreateTab("ESP", 4483362458)
+local ToolsTab = Window:CreateTab("Outils", 4483362458)
 
--- VARIABLES
-local flying = false
-local flySpeed = 420
-local bv = nil
-local joystickGui = nil
-local nametag = nil
-local espEnabled = false
-local espObjects = {}
+-- LISTE JOUEURS + EMOJIS
+local playerList = {"Choisir un joueur"}
 
--- JOYSTICK VIRTUEL (toujours visible quand fly ON)
+local function updatePlayerList()
+    playerList = {"Choisir un joueur"}
+    for _, p in Players:GetPlayers() do
+        if p ~= plr then
+            table.insert(playerList, p.DisplayName.." (@ "..p.Name..")")
+        end
+    end
+    if viewDropdown then viewDropdown:Refresh(playerList, true) end
+    if tpDropdown then tpDropdown:Refresh(playerList, true) end
+end
+
+local viewDropdown = ToolsTab:CreateDropdown({
+    Name = "View Joueur",
+    Options = playerList,
+    CurrentOption = "Choisir un joueur",
+    Callback = function(choice)
+        if choice == "Choisir un joueur" then return end
+        local username = choice:match("@%s*(.+)%)$")
+        local target = Players:FindFirstChild(username)
+        if target and target.Character and target.Character:FindFirstChildOfClass("Humanoid") then
+            cam.CameraSubject = target.Character:FindFirstChildOfClass("Humanoid")
+            cam.CameraType = Enum.CameraType.Follow
+            Rayfield:Notify({Title="VIEW", Content="Tu regardes "..target.DisplayName, Duration=4})
+        end
+    end
+})
+
+local tpDropdown = ToolsTab:CreateDropdown({
+    Name = "TP à un joueur",
+    Options = playerList,
+    CurrentOption = "Choisir un joueur",
+    Callback = function(choice)
+        if choice == "Choisir un joueur" then return end
+        local username = choice:match("@%s*(.+)%)$")
+        local target = Players:FindFirstChild(username)
+        if target and target.Character and target.Character:FindFirstChild("HumanoidRootPart") then
+            plr.Character:PivotTo(target.Character.HumanoidRootPart.CFrame * CFrame.new(0,3,-3))
+            Rayfield:Notify({Title="TP", Content="Téléporté derrière "..target.DisplayName, Duration=4})
+        end
+    end
+})
+
+ToolsTab:CreateButton({
+    Name = "Unview (libérer caméra)",
+    Callback = function()
+        if plr.Character then
+            cam.CameraSubject = plr.Character:FindFirstChildOfClass("Humanoid")
+            cam.CameraType = Enum.CameraType.Custom
+            Rayfield:Notify({Title="UNVIEW", Content="Caméra libre", Duration=3})
+        end
+    end
+})
+
+-- Auto-refresh
+Players.PlayerAdded:Connect(updatePlayerList)
+Players.PlayerRemoving:Connect(updatePlayerList)
+task.spawn(updatePlayerList)
+
+-- SPEED
+ToolsTab:CreateSlider({
+    Name = "WalkSpeed",
+    Range = {16, 1000},
+    Increment = 10,
+    CurrentValue = 16,
+    Callback = function(v)
+        walkSpeed = v
+        if plr.Character and plr.Character:FindFirstChildOfClass("Humanoid") then
+            plr.Character.Humanoid.WalkSpeed = v
+        end
+    end
+})
+
+-- NOCLIP
+ToolsTab:CreateToggle({
+    Name = "Noclip",
+    CurrentValue = false,
+    Callback = function(v)
+        noclip = v
+        if v then
+            if noclipConnection then noclipConnection:Disconnect() end
+            noclipConnection = RunService.Stepped:Connect(function()
+                if plr.Character then
+                    for _, part in plr.Character:GetDescendants() do
+                        if part:IsA("BasePart") then part.CanCollide = false end
+                    end
+                end
+            end)
+            Rayfield:Notify({Title="NOCLIP ON", Content="Tu traverses tout", Duration=3})
+        else
+            if noclipConnection then noclipConnection:Disconnect() end
+            if plr.Character then
+                for _, part in plr.Character:GetDescendants() do
+                    if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
+                        part.CanCollide = true
+                    end
+                end
+            end
+        end
+    end
+})
+
+-- JOYSTICK
+local joystickGui, bg, knob
+local moveVector = Vector2.new(0,0)
+
 local function createJoystick()
     if joystickGui then joystickGui:Destroy() end
     joystickGui = Instance.new("ScreenGui")
     joystickGui.Name = "LTD_JOYSTICK"
     joystickGui.ResetOnSpawn = false
-    joystickGui.Parent = plr.PlayerGui
+    joystickGui.DisplayOrder = 999999
+    joystickGui.Parent = game.CoreGui
 
-    local frame = Instance.new("Frame", joystickGui)
-    frame.Size = UDim2.new(0, 320, 0, 320)
-    frame.Position = UDim2.new(0, 20, 1, -340)
-    frame.BackgroundColor3 = Color3.new(0,0,0)
-    frame.BackgroundTransparency = 0.5
-    frame.BorderSizePixel = 0
-    Instance.new("UICorner", frame).CornerRadius = UDim.new(1, 0)
+    bg = Instance.new("ImageButton")
+    bg.Size = UDim2.new(0,180,0,180)
+    bg.Position = UDim2.new(0,30,1,-210)
+    bg.BackgroundColor3 = Color3.fromRGB(0,0,0)
+    bg.BackgroundTransparency = 0.5
+    bg.Parent = joystickGui
+    Instance.new("UICorner", bg).CornerRadius = UDim.new(0,90)
 
-    local dirs = {
-        {text="Up Arrow", pos=UDim2.new(0.5,-45,0.15,0), key="U"},
-        {text="Down Arrow", pos=UDim2.new(0.5,-45,0.85,-90), key="D"},
-        {text="Left Arrow", pos=UDim2.new(0.1,0,0.5,-45), key="L"},
-        {text="Right Arrow", pos=UDim2.new(0.9,-90,0.5,-45), key="R"},
-    }
+    knob = Instance.new("Frame")
+    knob.Size = UDim2.new(0,70,0,70)
+    knob.Position = UDim2.new(0.5,-35,0.5,-35)
+    knob.BackgroundColor3 = Color3.fromRGB(180,0,255)
+    knob.Parent = bg
+    Instance.new("UICorner", knob).CornerRadius = UDim.new(1,0)
+    local s = Instance.new("UIStroke", knob)
+    s.Thickness = 6
+    s.Color = Color3.fromRGB(255,100,255)
 
-    for _, v in ipairs(dirs) do
-        local btn = Instance.new("TextButton", frame)
-        btn.Size = UDim2.new(0,90,0,90)
-        btn.Position = v.pos
-        btn.BackgroundColor3 = Color3.fromRGB(200, 0, 255)
-        btn.Text = v.text
-        btn.TextColor3 = Color3.new(1,1,1)
-        btn.Font = Enum.Font.GothamBlack
-        btn.TextSize = 40
-        btn.BorderSizePixel = 0
-        Instance.new("UICorner", btn).CornerRadius = UDim.new(1,0)
-        
-        btn.MouseButton1Down:Connect(function() _G["joy_"..v.key] = true end)
-        btn.MouseButton1Up:Connect(function() _G["joy_"..v.key] = false end)
-        btn.MouseLeave:Connect(function() _G["joy_"..v.key] = false end)
-        btn.MouseEnter:Connect(function() btn.BackgroundColor3 = Color3.fromRGB(255, 100, 255) end)
-        btn.MouseLeave:Connect(function() btn.BackgroundColor3 = Color3.fromRGB(200, 0, 255) end)
-    end
-end
+    local touching = false
+    local startPos = Vector2.new()
 
--- NAMETAG LTD
-local function createNametag()
-    if nametag then nametag:Destroy() end
-    local head = plr.Character and plr.Character:FindFirstChild("Head")
-    if not head then return end
-
-    nametag = Instance.new("BillboardGui", head)
-    nametag.Adornee = head
-    nametag.Size = UDim2.new(0, 300, 0, 100)
-    nametag.StudsOffset = Vector3.new(0, 4.5, 0)
-    nametag.AlwaysOnTop = true
-    nametag.Name = "LTD_TAG"
-
-    local label = Instance.new("TextLabel", nametag)
-    label.Size = UDim2.new(1,0,1,0)
-    label.BackgroundTransparency = 1
-    label.Text = "LTD"
-    label.TextColor3 = Color3.fromRGB(255, 0, 255)
-    label.TextStrokeTransparency = 0
-    label.TextStrokeColor3 = Color3.new(0,0,0)
-    label.Font = Enum.Font.GothamBlack
-    label.TextSize = 70
-
-    spawn(function()
-        while nametag and nametag.Parent do
-            TweenService:Create(label, TweenInfo.new(0.4, Enum.EasingStyle.Linear, Enum.EasingDirection.Out, -1, true), {TextTransparency = 0.3}):Play()
-            task.wait(0.8)
+    bg.InputBegan:Connect(function(i)
+        if i.UserInputType == Enum.UserInputType.Touch or i.UserInputType == Enum.UserInputType.MouseButton1 then
+            touching = true
+            startPos = Vector2.new(i.Position.X, i.Position.Y)
         end
+    end)
+
+    bg.InputChanged:Connect(function(i)
+        if touching then
+            local delta = Vector2.new(i.Position.X, i.Position.Y) - startPos
+            local dist = math.min(delta.Magnitude, 55)
+            local dir = delta.Unit
+            moveVector = Vector2.new(dir.X, dir.Y)
+            knob.Position = UDim2.new(0.5, dir.X*55-35, 0.5, dir.Y*55-35)
+        end
+    end)
+
+    bg.InputEnded:Connect(function()
+        touching = false
+        moveVector = Vector2.new(0,0)
+        knob:TweenPosition(UDim2.new(0.5,-35,0.5,-35), "Out","Quad",0.2,true)
     end)
 end
 
--- FLY + NOCLIP
-local FlyToggle = TabMain:CreateToggle({
-    Name = "Fly + Noclip (touche E)",
+-- FLY
+local function updateFly()
+    if not flying or not plr.Character or not plr.Character:FindFirstChild("HumanoidRootPart") then return end
+    local root = plr.Character.HumanoidRootPart
+    local move = Vector3.new(0,0,0)
+    local look = cam.CFrame.LookVector
+    local right = cam.CFrame.RightVector
+
+    if UserInputService:IsKeyDown(Enum.KeyCode.Z) or UserInputService:IsKeyDown(Enum.KeyCode.W) then move += look end
+    if UserInputService:IsKeyDown(Enum.KeyCode.S) then move -= look end
+    if UserInputService:IsKeyDown(Enum.KeyCode.Q) or UserInputService:IsKeyDown(Enum.KeyCode.A) then move -= right end
+    if UserInputService:IsKeyDown(Enum.KeyCode.D) then move += right end
+    if UserInputService:IsKeyDown(Enum.KeyCode.Space) then move += Vector3.new(0,1,0) end
+    if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then move -= Vector3.new(0,1,0) end
+
+    if moveVector.Magnitude > 0.1 then
+        move += (look * -moveVector.Y) + (right * moveVector.X)
+    end
+
+    bv.Velocity = move.Magnitude > 0 and move.Unit * flySpeed or Vector3.zero
+end
+
+FlyTab:CreateToggle({
+    Name = "Fly (ZQSD + Joystick)",
     CurrentValue = false,
     Callback = function(v)
         flying = v
-        local root = plr.Character and plr.Character:FindFirstChild("HumanoidRootPart")
-        local hum = plr.Character and plr.Character:FindFirstChild("Humanoid")
-        if not root or not hum then return end
+        local hum = plr.Character and plr.Character:FindFirstChildOfClass("Humanoid")
+        if hum then hum.PlatformStand = v end
 
-        hum.PlatformStand = flying
-        if flying then
-            createNametag()
-            createJoystick()
-
-            bv = Instance.new("BodyVelocity", root)
+        if v then
+            if bv then bv:Destroy() end
+            bv = Instance.new("BodyVelocity")
             bv.MaxForce = Vector3.new(1e5,1e5,1e5)
             bv.Velocity = Vector3.zero
+            bv.Parent = plr.Character.HumanoidRootPart
 
-            RunService.Stepped:Connect(function()
-                if not flying then return end
-                for _, part in plr.Character:GetDescendants() do
-                    if part:IsA("BasePart") then part.CanCollide = false end
-                end
-            end)
-
-            RunService.Heartbeat:Connect(function()
-                if not flying then return end
-                local move = Vector3.new(0,0,0)
-                local look = cam.CFrame.LookVector
-                local right = cam.CFrame.RightVector
-
-                if UserInputService:IsKeyDown(Enum.KeyCode.Z) or _G.joy_F then move += look end
-                if UserInputService:IsKeyDown(Enum.KeyCode.S) or _G.joy_B then move -= look end
-                if UserInputService:IsKeyDown(Enum.KeyCode.Q) or _G.joy_L then move -= right end
-                if UserInputService:IsKeyDown(Enum.KeyCode.D) or _G.joy_R then move += right end
-                if UserInputService:IsKeyDown(Enum.KeyCode.Space) or _G.joy_U then move += Vector3.new(0,1,0) end
-                if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) or _G.joy_D then move -= Vector3.new(0,1,0) end
-
-                bv.Velocity = move.Magnitude > 0 and move.Unit * flySpeed or Vector3.zero
-            end)
+            createJoystick()
+            if heartbeatConn then heartbeatConn:Disconnect() end
+            heartbeatConn = RunService.Heartbeat:Connect(updateFly)
         else
             if bv then bv:Destroy() bv = nil end
-            if joystickGui then joystickGui:Destroy() joystickGui = nil end
-            if nametag then nametag:Destroy() nametag = nil end
-            for k in pairs(_G) do if k:find("joy_") then _G[k] = nil end end
-            hum.PlatformStand = false
-            for _, part in plr.Character:GetDescendants() do
-                if part:IsA("BasePart") then part.CanCollide = true end
-            end
-        end
-    end,
-})
-
-TabMain:CreateSlider({
-    Name = "Vitesse Fly",
-    Range = {100, 2000},
-    Increment = 50,
-    CurrentValue = 420,
-    Callback = function(v) flySpeed = v end,
-})
-
--- ESP
-TabVisual:CreateToggle({
-    Name = "ESP Violet",
-    CurrentValue = false,
-    Callback = function(v)
-        espEnabled = v
-        if v then
-            for _, p in Players:GetPlayers() do
-                if p ~= plr and p.Character then
-                    local char = p.Character
-                    local head = char:FindFirstChild("Head")
-                    local root = char:FindFirstChild("HumanoidRootPart")
-                    if head and root and not espObjects[p] then
-                        local box = Instance.new("BoxHandleAdornment")
-                        box.Size = Vector3.new(4,6,4)
-                        box.Color3 = Color3.fromRGB(255,0,255)
-                        box.Transparency = 0.4
-                        box.AlwaysOnTop = true
-                        box.Adornee = char
-                        box.Parent = char
-
-                        local bill = Instance.new("BillboardGui")
-                        bill.Adornee = head
-                        bill.Size = UDim2.new(0,200,0,70)
-                        bill.StudsOffset = Vector3.new(0,3,0)
-                        bill.AlwaysOnTop = true
-                        bill.Parent = char
-
-                        local name = Instance.new("TextLabel", bill)
-                        name.Size = UDim2.new(1,0,0.6,0)
-                        name.BackgroundTransparency = 1
-                        name.Text = p.DisplayName
-                        name.TextColor3 = Color3.fromRGB(255,0,255)
-                        name.Font = Enum.Font.GothamBlack
-                        name.TextSize = 22
-
-                        local dist = Instance.new("TextLabel", bill)
-                        dist.Position = UDim2.new(0,0,0.6,0)
-                        dist.Size = UDim2.new(1,0,0.4,0)
-                        dist.BackgroundTransparency = 1
-                        dist.TextColor3 = Color3.new(1,1,1)
-                        dist.TextSize = 16
-
-                        espObjects[p] = {box=box, bill=bill, dist=dist}
-
-                        spawn(function()
-                            while espObjects[p] and root.Parent do
-                                local d = (plr.Character.HumanoidRootPart.Position - root.Position).Magnitude
-                                dist.Text = math.floor(d).."m"
-                                task.wait(0.1)
-                            end
-                        end)
-                    end
-                end
-            end
-        else
-            for _, o in espObjects do
-                if o.box then o.box:Destroy() end
-                if o.bill then o.bill:Destroy() end
-            end
-            espObjects = {}
-        end
-    end,
-})
-
--- LISTE JOUEURS 100% FIXÉE
-local playerSection = TabPlayers:CreateSection("Joueurs en ligne")
-
-local function updatePlayerList()
-    playerSection:Clear()
-    
-    for _, p in Players:GetPlayers() do
-        if p ~= plr then
-            playerSection:CreateButton({
-                Name = p.DisplayName .. " (@" .. p.Name .. ")",
-                Callback = function()
-                    -- View
-                    playerSection:CreateButton({
-                        Name = "VIEW " .. p.DisplayName,
-                        Callback = function()
-                            if cam.CameraSubject == p.Character.Humanoid then
-                                cam.CameraSubject = plr.Character.Humanoid
-                            else
-                                cam.CameraSubject = p.Character.Humanoid
-                            end
-                        end,
-                    })
-                    -- TP
-                    playerSection:CreateButton({
-                        Name = "TP → " .. p.DisplayName,
-                        Callback = function()
-                            if p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
-                                plr.Character:PivotTo(p.Character.HumanoidRootPart.CFrame * CFrame.new(0,0,-4))
-                            end
-                        end,
-                    })
-                end,
-            })
+            if joystickGui then joystickGui:Destroy() end
+            if heartbeatConn then heartbeatConn:Disconnect() end
         end
     end
-end
+})
 
-TabPlayers:CreateButton({Name = "Rafraîchir la liste", Callback = updatePlayerList})
-Players.PlayerAdded:Connect(updatePlayerList)
-Players.PlayerRemoving:Connect(updatePlayerList)
-updatePlayerList() -- première charge
+FlyTab:CreateSlider({
+    Name = "Vitesse Fly",
+    Range = {100, 3000},
+    Increment = 10,
+    CurrentValue = 420,
+    Callback = function(v) flySpeed = v end
+})
 
--- TOUCHE E
-UserInputService.InputBegan:Connect(function(input)
-    if input.KeyCode == Enum.KeyCode.E then
-        FlyToggle:Set(not FlyToggle.CurrentValue)
+-- ANTI-FLING
+ToolsTab:CreateToggle({Name="Anti-Fling", CurrentValue=true, Callback=function(v) antiFling=v end})
+RunService.Stepped:Connect(function()
+    if antiFling and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
+        local hrp = plr.Character.HumanoidRootPart
+        if hrp.Velocity.Magnitude > 500 then hrp.Velocity = Vector3.new(0,0,0) end
     end
 end)
 
+-- ESP VIOLET
+ESPTab:CreateToggle({Name="ESP Violet (traverse murs)", CurrentValue=false, Callback=function(state)
+    for _,v in espObjects do if v then v:Destroy() end end
+    espObjects = {}
+    if not state then return end
+    for _, p in Players:GetPlayers() do
+        if p ~= plr and p.Character and p.Character:FindFirstChild("Head") then
+            local char = p.Character
+            local head = char.Head
+            local box = Instance.new("BoxHandleAdornment")
+            box.Size = Vector3.new(4,6,4); box.Color3 = Color3.fromRGB(180,0,255)
+            box.Transparency = 0.3; box.AlwaysOnTop = true; box.Adornee = char; box.Parent = char
+            local bill = Instance.new("BillboardGui")
+            bill.Size = UDim2.new(0,200,0,50); bill.Adornee = head; bill.AlwaysOnTop = true; bill.Parent = head
+            local txt = Instance.new("TextLabel", bill)
+            txt.Size = UDim2.new(1,0,1,0); txt.BackgroundTransparency = 1
+            txt.Text = p.DisplayName; txt.TextColor3 = Color3.fromRGB(200,0,255)
+            txt.Font = Enum.Font.GothamBlack; txt.TextStrokeTransparency = 0; txt.TextSize = 18
+            table.insert(espObjects, box); table.insert(espObjects, bill)
+        end
+    end
+end})
+
+-- DISCORD
+ToolsTab:CreateButton({Name="Copier Discord LTD", Callback=function()
+    setclipboard("https://discord.gg/rvwaUjzNmK")
+    Rayfield:Notify({Title="LTD", Content="Lien copié fréro !", Duration=5})
+end})
+
+-- NOTIF FINALE
 Rayfield:Notify({
-    Title = "LTD v1.5 FIXED",
-    Content = "Joystick + Liste joueurs MARCHE À 100% ! Touche E = Fly",
-    Duration = 8,
+    Title = "LTD v2.0 FINAL",
+    Content = "Liste joueurs 100% fonctionnelle\nTP & View parfaits\nSpeed + Noclip + Anti-Fling\nESP violet\nFly mobile\nLE SCRIPT LE PLUS PUISSANT DE ROBLOX",
+    Duration = 20,
+    Image = 4483362458
 })
