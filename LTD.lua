@@ -16,6 +16,7 @@ local antiFling = true
 local espObjects = {}
 local noclipConnection = nil
 local heartbeatConn = nil
+local flyNoclipConn = nil
 
 -- AIMBOT
 local aimbotEnabled = false
@@ -33,7 +34,7 @@ local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 local Window = Rayfield:CreateWindow({
     Name = "LTD v2.5 ULTIME",
     LoadingTitle = "LTD v2.5",
-    LoadingSubtitle = "by zelchevt - Rouen 10/11/2025 20:55",
+    LoadingSubtitle = "by zelchevt - Rouen 16/11/2025 19:30",
     ConfigurationSaving = {Enabled = false},
     Discord = {Enabled = true, Invite = "rvwaUjzNmK", RememberJoins = false},
     KeySystem = false
@@ -45,10 +46,10 @@ local AimbotTab = Window:CreateTab("Aimbot", 4483362458)
 local ToolsTab = Window:CreateTab("Outils", 4483362458)
 local CreditsTab = Window:CreateTab("Crédits", 4483362458)
 
--- CRÉDITS MIS À JOUR COMME TU VEUX
+-- CRÉDITS
 CreditsTab:CreateParagraph({
     Title = "LTD v2.5 - Édition ULTIME",
-    Content = "Créé par zelchevt\n\nPseudo Roblox : zelchevt\nUserID : "..plr.UserId.."\n\nCréé le 08 Novembre 2025 - 20:23\nRouen, FR\nMis à jour le 10 Novembre 2025 - 20:55\nRouen, FR\n\nVersion 100% CLEAN - NO CHAT"
+    Content = "Créé par zelchevt\n\nPseudo Roblox : zelchevt\nUserID : "..plr.UserId.."\n\nCréé le 08 Novembre 2025 - 20:23\nRouen, FR\nMis à jour le 16 Novembre 2025 - 19:30\nRouen, FR\n\nVersion 100% CLEAN - NO CHAT"
 })
 
 CreditsTab:CreateButton({
@@ -200,9 +201,9 @@ ToolsTab:CreateToggle({
     end
 })
 
--- NOCLIP
+-- NOCLIP GLOBAL
 ToolsTab:CreateToggle({
-    Name = "Noclip",
+    Name = "Noclip Global",
     CurrentValue = false,
     Callback = function(v)
         noclip = v
@@ -220,69 +221,98 @@ ToolsTab:CreateToggle({
     end
 })
 
--- FLY + JOYSTICK
+-- FLY + JOYSTICK + NOCLIP (100% CORRIGÉ)
 local joystickGui, bg, knob
 local moveVec = Vector2.new(0,0)
+local joystickActive = false
+local joystickInput = nil
 
 local function createJoystick()
+    if joystickGui then joystickGui:Destroy() end
     joystickGui = Instance.new("ScreenGui", game.CoreGui)
+    joystickGui.ResetOnSpawn = false
+    joystickGui.Name = "LTD_JOYSTICK"
+    joystickGui.IgnoreGuiInset = true
+
     bg = Instance.new("Frame", joystickGui)
     bg.Size = UDim2.new(0,160,0,160)
     bg.Position = UDim2.new(0,30,1,-190)
     bg.BackgroundTransparency = 0.6
     bg.BackgroundColor3 = Color3.new(0,0,0)
     bg.BorderSizePixel = 0
+    bg.ZIndex = 10
     Instance.new("UICorner", bg).CornerRadius = UDim.new(1,0)
 
     knob = Instance.new("Frame", bg)
     knob.Size = UDim2.new(0,60,0,60)
     knob.Position = UDim2.new(0.5,-30,0.5,-30)
     knob.BackgroundColor3 = Color3.fromRGB(180,0,255)
+    knob.Name = "Knob"
+    knob.ZIndex = 11
     Instance.new("UICorner", knob).CornerRadius = UDim.new(1,0)
 
-    local dragging = false
-    knob.InputBegan:Connect(function(i)
-        if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
-            dragging = true
+    knob.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            joystickActive = true
+            joystickInput = input
         end
     end)
-    knob.InputEnded:Connect(function(i)
-        if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
-            dragging = false
-            moveVec = Vector2.new(0,0)
-            knob.Position = UDim2.new(0.5,-30,0.5,-30)
+
+    UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            if joystickActive and (joystickInput == input or not joystickInput) then
+                joystickActive = false
+                moveVec = Vector2.new(0,0)
+                knob.Position = UDim2.new(0.5,-30,0.5,-30)
+                joystickInput = nil
+            end
         end
     end)
-    UserInputService.InputChanged:Connect(function(i)
-        if dragging and (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch) then
-            local delta = Vector2.new(i.Position.X, i.Position.Y) - bg.AbsolutePosition - bg.AbsoluteSize/2
+
+    UserInputService.InputChanged:Connect(function(input)
+        if joystickActive and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+            if joystickInput and input ~= joystickInput then return end
+            local centerPos = bg.AbsolutePosition + bg.AbsoluteSize/2
+            local delta = Vector2.new(input.Position.X, input.Position.Y) - centerPos
             local mag = math.min(delta.Magnitude, 50)
-            moveVec = delta.Unit * (mag/50)
-            knob.Position = UDim2.new(0.5,-30 + delta.X, 0.5,-30 + delta.Y)
+            moveVec = delta.Unit * (mag / 50)
+            knob.Position = UDim2.new(0, centerPos.X - bg.AbsolutePosition.X - 30 + delta.X, 0, centerPos.Y - bg.AbsolutePosition.Y - 30 + delta.Y)
         end
     end)
 end
 
 local function updateFly()
-    if not flying or not plr.Character or not plr.Character:FindFirstChild("HumanoidRootPart") then return end
+    if not flying or not plr.Character or not plr.Character:FindFirstChild("HumanoidRootPart") or not bv then return end
     local hrp = plr.Character.HumanoidRootPart
     local dir = Vector3.new(0,0,0)
     local look = cam.CFrame.LookVector
     local right = cam.CFrame.RightVector
+    local up = cam.CFrame.UpVector
 
+    -- Clavier
     if UserInputService:IsKeyDown(Enum.KeyCode.W) then dir += look end
     if UserInputService:IsKeyDown(Enum.KeyCode.S) then dir -= look end
     if UserInputService:IsKeyDown(Enum.KeyCode.A) then dir -= right end
     if UserInputService:IsKeyDown(Enum.KeyCode.D) then dir += right end
-    if UserInputService:IsKeyDown(Enum.KeyCode.Space) then dir += Vector3.new(0,1,0) end
-    if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then dir -= Vector3.new(0,1,0) end
+    if UserInputService:IsKeyDown(Enum.KeyCode.Space) then dir += up end
+    if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then dir -= up end
 
-    dir = dir + Vector3.new(moveVec.X, 0, -moveVec.Y)
-    bv.Velocity = dir.Unit * flySpeed
+    -- Joystick
+    if moveVec.Magnitude > 0 then
+        local forward = -moveVec.Y * look
+        local strafe = moveVec.X * right
+        dir = dir + forward + strafe
+    end
+
+    if dir.Magnitude > 0 then
+        bv.Velocity = dir.Unit * flySpeed
+    else
+        bv.Velocity = Vector3.new(0,0,0)
+    end
 end
 
 FlyTab:CreateToggle({
-    Name = "Fly (ZQSD + Joystick Mobile)",
+    Name = "Fly (Noclip + Joystick Fixé)",
     CurrentValue = false,
     Callback = function(v)
         flying = v
@@ -290,17 +320,32 @@ FlyTab:CreateToggle({
             plr.Character.Humanoid.PlatformStand = v
         end
         if v then
+            if not plr.Character or not plr.Character:FindFirstChild("HumanoidRootPart") then return end
+            if bv then bv:Destroy() end
             bv = Instance.new("BodyVelocity")
             bv.MaxForce = Vector3.new(1e5,1e5,1e5)
             bv.Velocity = Vector3.zero
             bv.Parent = plr.Character.HumanoidRootPart
             createJoystick()
-            heartbeatConn = RunService.Heartbeat:Connect(updateFly)
-            Rayfield:Notify({Title="FLY ON", Content="Envole-toi mon reuf !", Duration=5})
-        else
-            if bv then bv:Destroy() end
-            if joystickGui then joystickGui:Destroy() end
             if heartbeatConn then heartbeatConn:Disconnect() end
+            heartbeatConn = RunService.Heartbeat:Connect(updateFly)
+            -- Fly Noclip
+            if flyNoclipConn then flyNoclipConn:Disconnect() end
+            flyNoclipConn = RunService.Stepped:Connect(function()
+                if flying and plr.Character then
+                    for _, p in plr.Character:GetDescendants() do
+                        if p:IsA("BasePart") then p.CanCollide = false end
+                    end
+                end
+            end)
+            Rayfield:Notify({Title="FLY ON", Content="Noclip + Joystick Fixé", Duration=5})
+        else
+            if bv then bv:Destroy() bv = nil end
+            if joystickGui then joystickGui:Destroy() joystickGui = nil end
+            if heartbeatConn then heartbeatConn:Disconnect() heartbeatConn = nil end
+            if flyNoclipConn then flyNoclipConn:Disconnect() flyNoclipConn = nil end
+            joystickActive = false
+            joystickInput = nil
         end
     end
 })
@@ -323,10 +368,97 @@ RunService.Stepped:Connect(function()
     end
 end)
 
+-- TELEPORT + VIEW (BROOKHAVEN SEULEMENT)
+local brookhavenPlaceId = 492492222
+
+if game.PlaceId == brookhavenPlaceId then
+    local TeleportTab = Window:CreateTab("TP & View", 4483362458)
+
+    -- TELEPORT TO PLAYERS
+    TeleportTab:CreateDropdown({
+        Name = "TP vers joueur",
+        Options = {},
+        CurrentValue = "",
+        Callback = function(v)
+            local target = Players:FindFirstChild(v)
+            if target and target.Character and target.Character:FindFirstChild("HumanoidRootPart") then
+                plr.Character.HumanoidRootPart.CFrame = target.Character.HumanoidRootPart.CFrame
+                Rayfield:Notify({Title="TP", Content="Téléporté vers "..v, Duration=3})
+            end
+        end
+    })
+
+    local tpDropdown
+    local function updateTPList()
+        local names = {}
+        for _, p in Players:GetPlayers() do
+            if p ~= plr then table.insert(names, p.DisplayName.." (@ "..p.Name..")") end
+        end
+        if tpDropdown then tpDropdown:Refresh(names, true) end
+    end
+
+    Players.PlayerAdded:Connect(updateTPList)
+    Players.PlayerRemoving:Connect(updateTPList)
+    task.spawn(function()
+        while task.wait(2) do updateTPList() end
+    end)
+
+    tpDropdown = TeleportTab:GetChildren()[#TeleportTab:GetChildren()]
+
+    -- VIEW PLAYER
+    local viewTarget = nil
+    TeleportTab:CreateDropdown({
+        Name = "View joueur",
+        Options = {},
+        CurrentValue = "",
+        Callback = function(v)
+            local name = v:match("@ (.+)")
+            local target = Players:FindFirstChild(name)
+            if target then
+                if viewTarget then workspace.CurrentCamera.CameraSubject = plr.Character.Humanoid end
+                viewTarget = target
+                workspace.CurrentCamera.CameraSubject = target.Character.Humanoid
+                Rayfield:Notify({Title="VIEW", Content="Regarde "..target.DisplayName, Duration=3})
+            else
+                if viewTarget then
+                    workspace.CurrentCamera.CameraSubject = plr.Character.Humanoid
+                    viewTarget = nil
+                end
+            end
+        end
+    })
+
+    local viewDropdown
+    local function updateViewList()
+        local names = {"[Aucun]"}
+        for _, p in Players:GetPlayers() do
+            if p ~= plr then table.insert(names, p.DisplayName.." (@ "..p.Name..")") end
+        end
+        if viewDropdown then viewDropdown:Refresh(names, true) end
+    end
+
+    Players.PlayerAdded:Connect(updateViewList)
+    Players.PlayerRemoving:Connect(updateViewList)
+    task.spawn(function()
+        while task.wait(2) do updateViewList() end
+    end)
+
+    viewDropdown = TeleportTab:GetChildren()[#TeleportTab:GetChildren()]
+
+    -- Désactiver view au respawn
+    plr.CharacterAdded:Connect(function()
+        if viewTarget then
+            workspace.CurrentCamera.CameraSubject = plr.Character.Humanoid
+            viewTarget = nil
+            if viewDropdown then viewDropdown:Set("[Aucun]") end
+        end
+    end)
+end
+
 -- NOTIF FINALE
 Rayfield:Notify({
     Title = "LTD v2.5 ULTIME CHARGÉ",
-    Content = "Infinie balles\nTir infini\nAimbot silencieux\nESP violet\nFly + joystick\nNoclip\nAnti-fling\n\n100% CLEAN - NO CHAT\nCréé le 08/11/2025 20:23\nMis à jour le 10/11/2025 20:55\nRouen, FR",
-    Duration = 18,
+    Content = "Infinie balles\nTir infini\nAimbot silencieux\nESP violet\nFly + NOCLIP + JOYSTICK FIXÉ\nNoclip Global\nAnti-fling\n\n+ TP & View (Brookhaven only)\n\n100% CLEAN - NO CHAT\nMis à jour le 16/11/2025 19:30\nRouen, FR",
+    Duration = 20,
     Image = 4483362458
 })
